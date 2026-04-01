@@ -24,6 +24,13 @@ class MusicBot(commands.Bot):
 
     async def setup_hook(self) -> None:
         await setup_music_cog(self, self.resolver, self.player, self.playlists)
+        # Global sync can take a while to appear. For faster iteration, set DEV_GUILD_ID
+        # to sync commands instantly to a specific server.
+        if self.settings.dev_guild_id:
+            guild = discord.Object(id=self.settings.dev_guild_id)
+            self.tree.copy_global_to(guild=guild)
+            await self.tree.sync(guild=guild)
+            return
         await self.tree.sync()
 
 

@@ -83,6 +83,21 @@ class PlaylistRepository:
             ).fetchall()
         return [row["name"] for row in rows]
 
+    def rename_playlist(self, user_id: int, old_name: str, new_name: str) -> bool:
+        new_name = new_name.strip()
+        if not new_name:
+            return False
+        with self._connect() as conn:
+            updated = conn.execute(
+                """
+                UPDATE playlists
+                SET name = ?
+                WHERE owner_id = ? AND name = ?
+                """,
+                (new_name, user_id, old_name),
+            )
+            return updated.rowcount > 0
+
     def _get_playlist_id(self, conn: sqlite3.Connection, user_id: int, name: str) -> Optional[int]:
         row = conn.execute(
             "SELECT id FROM playlists WHERE owner_id = ? AND name = ?",

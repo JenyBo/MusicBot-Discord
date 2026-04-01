@@ -36,6 +36,10 @@ python main.py
 
 ## Slash commands
 
+### Help
+
+- `/help`
+
 ### Core playback
 
 - `/play <query_or_url>`
@@ -46,8 +50,9 @@ python main.py
 ### Personal playlists
 
 - `/plist create <name>`
-- `/plist add <name> <query_or_url>`
-- `/plist remove <name> <index>`
+- `/plist add <name> <query_or_url>` (supports up to 5 items separated by commas; auto-creates playlist if missing)
+- `/plist remove <name> <index>` (supports up to 5 indices separated by commas; posts updated playlist in chat)
+- `/plist rename <old_name> <new_name>`
 - `/plist show <name>`
 - `/plist play <name>`
 - `/plist list`
