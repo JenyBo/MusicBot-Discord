@@ -70,3 +70,4 @@ python main.py
 
 - This project is intended for personal testing on a private server.
 - YouTube and Discord platform policies can change; make sure your usage remains compliant.
+- Update dev_guild_id if you want to dev this more
