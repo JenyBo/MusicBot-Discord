@@ -43,7 +43,9 @@ def main() -> None:
         discord.opus._load_default()
     if not discord.opus.is_loaded():
         raise RuntimeError(
-            "Could not load libopus. Install it or place opus.dll in your PATH."
+            "Could not load libopus.\n"
+            "- Linux (Debian/Ubuntu): install `libopus0` (and `ffmpeg`)\n"
+            "- Windows: install Opus or place `opus.dll` in your PATH"
         )
     logging.info("Opus loaded: %s", discord.opus.is_loaded())
 
