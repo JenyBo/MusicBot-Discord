@@ -32,6 +32,7 @@ class PlaylistRepository:
                     owner_id INTEGER NOT NULL,
                     name TEXT NOT NULL,
                     created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT,
                     UNIQUE(owner_id, name),
                     FOREIGN KEY(owner_id) REFERENCES users(id)
                 );
@@ -48,6 +49,12 @@ class PlaylistRepository:
                 );
                 """
             )
+            # Lightweight migration: ensure updated_at column exists on old installs.
+            try:
+                conn.execute("ALTER TABLE playlists ADD COLUMN updated_at TEXT")
+            except sqlite3.OperationalError:
+                # Column already exists; ignore.
+                pass
 
     def _ensure_user(self, user_id: int) -> None:
         with self._connect() as conn:
@@ -57,7 +64,7 @@ class PlaylistRepository:
         self._ensure_user(user_id)
         with self._connect() as conn:
             cur = conn.execute(
-                "INSERT OR IGNORE INTO playlists(owner_id, name) VALUES (?, ?)",
+                "INSERT OR IGNORE INTO playlists(owner_id, name, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)",
                 (user_id, name),
             )
             return cur.rowcount > 0
@@ -78,10 +85,60 @@ class PlaylistRepository:
     def list_playlists(self, user_id: int) -> list[str]:
         with self._connect() as conn:
             rows = conn.execute(
-                "SELECT name FROM playlists WHERE owner_id = ? ORDER BY name",
+                """
+                SELECT name
+                FROM playlists
+                WHERE owner_id = ?
+                ORDER BY name
+                """,
                 (user_id,),
             ).fetchall()
         return [row["name"] for row in rows]
+
+    @staticmethod
+    def _sql_like_pattern(fragment: str) -> str:
+        escaped = (
+            fragment.replace("\\", "\\\\")
+            .replace("%", "\\%")
+            .replace("_", "\\_")
+        )
+        return f"%{escaped}%"
+
+    def autocomplete_playlist_names(
+        self,
+        user_id: int,
+        query: str,
+        *,
+        limit_recent: int = 5,
+        limit_search: int = 25,
+    ) -> list[str]:
+        q = query.strip()
+        with self._connect() as conn:
+            if not q:
+                rows = conn.execute(
+                    """
+                    SELECT name
+                    FROM playlists
+                    WHERE owner_id = ?
+                    ORDER BY datetime(COALESCE(updated_at, created_at)) DESC, id DESC
+                    LIMIT ?
+                    """,
+                    (user_id, limit_recent),
+                ).fetchall()
+                return [row["name"] for row in rows]
+
+            pattern = self._sql_like_pattern(q)
+            rows = conn.execute(
+                """
+                SELECT name
+                FROM playlists
+                WHERE owner_id = ? AND name LIKE ? ESCAPE '\\'
+                ORDER BY datetime(COALESCE(updated_at, created_at)) DESC, id DESC
+                LIMIT ?
+                """,
+                (user_id, pattern, limit_search),
+            ).fetchall()
+            return [row["name"] for row in rows]
 
     def rename_playlist(self, user_id: int, old_name: str, new_name: str) -> bool:
         new_name = new_name.strip()
@@ -91,7 +148,7 @@ class PlaylistRepository:
             updated = conn.execute(
                 """
                 UPDATE playlists
-                SET name = ?
+                SET name = ?, updated_at = CURRENT_TIMESTAMP
                 WHERE owner_id = ? AND name = ?
                 """,
                 (new_name, user_id, old_name),
@@ -125,6 +182,10 @@ class PlaylistRepository:
                 VALUES (?, ?, ?, ?, ?)
                 """,
                 (playlist_id, next_pos, source, video_id, title),
+            )
+            conn.execute(
+                "UPDATE playlists SET updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                (playlist_id,),
             )
             return True
 
@@ -178,4 +239,8 @@ class PlaylistRepository:
                     "UPDATE playlist_tracks SET position = ? WHERE id = ?",
                     (new_pos, int(row["id"])),
                 )
+            conn.execute(
+                "UPDATE playlists SET updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                (playlist_id,),
+            )
             return True

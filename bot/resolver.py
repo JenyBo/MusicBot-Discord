@@ -1,11 +1,22 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from typing import Any, Optional
 
 import yt_dlp
 
 from .models import Track
+
+_CACHE_TTL = 30 * 60  # 30 minutes
+
+
+class _CacheEntry:
+    __slots__ = ("data", "expires_at")
+
+    def __init__(self, data: dict[str, Any], ttl: float) -> None:
+        self.data = data
+        self.expires_at = time.monotonic() + ttl
 
 
 class YouTubeResolver:
@@ -17,13 +28,38 @@ class YouTubeResolver:
             "quiet": True,
             "no_warnings": True,
         }
+        self._cache: dict[str, _CacheEntry] = {}
 
     def _extract_sync(self, query: str) -> dict[str, Any]:
         with yt_dlp.YoutubeDL(self._ydl_opts) as ydl:
             return ydl.extract_info(query, download=False)
 
+    def _cache_get(self, key: str) -> dict[str, Any] | None:
+        entry = self._cache.get(key)
+        if entry is None:
+            return None
+        if time.monotonic() > entry.expires_at:
+            del self._cache[key]
+            return None
+        return entry.data
+
+    def _cache_put(self, key: str, data: dict[str, Any]) -> None:
+        now = time.monotonic()
+        if len(self._cache) > 200:
+            expired = [k for k, v in self._cache.items() if now > v.expires_at]
+            for k in expired:
+                del self._cache[k]
+        self._cache[key] = _CacheEntry(data, _CACHE_TTL)
+
     async def extract(self, query: str, requester_id: int) -> Optional[Track]:
-        data = await asyncio.to_thread(self._extract_sync, query)
+        cached = self._cache_get(query)
+        if cached is not None:
+            data = cached
+        else:
+            data = await asyncio.to_thread(self._extract_sync, query)
+            if data is not None:
+                self._cache_put(query, data)
+
         if data is None:
             return None
         if "entries" in data:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from typing import Optional
 
 import discord
@@ -10,6 +11,27 @@ from discord.ext import commands
 from ..database import PlaylistRepository
 from ..player import PlayerManager
 from ..resolver import YouTubeResolver
+
+
+async def _playlist_name_autocomplete(
+    interaction: discord.Interaction, current: str
+) -> list[app_commands.Choice[str]]:
+    cog = interaction.client.get_cog("MusicCog")
+    if cog is None or interaction.user is None:
+        return []
+    names = cog.playlists.autocomplete_playlist_names(
+        interaction.user.id,
+        current,
+        limit_recent=5,
+        limit_search=25,
+    )
+    out: list[app_commands.Choice[str]] = []
+    for n in names:
+        # Discord limits autocomplete choice strings to 100 chars
+        if len(n) > 100:
+            continue
+        out.append(app_commands.Choice(name=n, value=n))
+    return out
 
 
 class MusicCog(commands.Cog):
@@ -201,6 +223,7 @@ class MusicCog(commands.Cog):
         await self._send(interaction, msg)
 
     @plist.command(name="delete", description="Delete one of your playlists")
+    @app_commands.autocomplete(name=_playlist_name_autocomplete)
     async def plist_delete(self, interaction: discord.Interaction, name: str) -> None:
         ok = self.playlists.delete_playlist(interaction.user.id, name)
         msg = f"Deleted playlist `{name}`." if ok else f"Playlist `{name}` not found."
@@ -215,6 +238,7 @@ class MusicCog(commands.Cog):
         await self._send(interaction, "\n".join([f"- {name}" for name in names]))
 
     @plist.command(name="rename", description="Rename one of your playlists")
+    @app_commands.autocomplete(old_name=_playlist_name_autocomplete)
     async def plist_rename(self, interaction: discord.Interaction, old_name: str, new_name: str) -> None:
         ok = self.playlists.rename_playlist(interaction.user.id, old_name, new_name)
         if ok:
@@ -226,7 +250,11 @@ class MusicCog(commands.Cog):
         name="add",
         description="Add up to 5 tracks (comma-separated) to your playlist (auto-create if missing)",
     )
-    @app_commands.describe(query_or_url="YouTube URL/search; add multiple by separating with commas")
+    @app_commands.describe(
+        name="Tên playlist (gõ hoặc chọn từ gợi ý 5 list mới nhất)",
+        query_or_url="YouTube URL/search; add multiple by separating with commas",
+    )
+    @app_commands.autocomplete(name=_playlist_name_autocomplete)
     async def plist_add(self, interaction: discord.Interaction, name: str, query_or_url: str) -> None:
         await interaction.response.defer(thinking=True)
 
@@ -265,10 +293,14 @@ class MusicCog(commands.Cog):
         if failed:
             lines.append("Could not add:")
             lines.extend([f"- `{x}`" for x in failed])
-        await self._followup(interaction, "\n".join(lines) if lines else "Không thêm được bài nào.")
+        if not lines:
+            lines.append("Không thêm được bài nào.")
+
+        await self._followup(interaction, "\n".join(lines))
 
     @plist.command(name="remove", description="Remove a track by its index in playlist")
     @app_commands.describe(index="1-based index; remove multiple by separating with commas (max 5)")
+    @app_commands.autocomplete(name=_playlist_name_autocomplete)
     async def plist_remove(self, interaction: discord.Interaction, name: str, index: str) -> None:
         indices = self._parse_csv_ints(index, max_items=5)
         if not indices:
@@ -313,6 +345,7 @@ class MusicCog(commands.Cog):
         await self._send(interaction, "\n".join(lines), ephemeral=False, delete_after=5)
 
     @plist.command(name="show", description="Show tracks in a playlist")
+    @app_commands.autocomplete(name=_playlist_name_autocomplete)
     async def plist_show(self, interaction: discord.Interaction, name: str) -> None:
         tracks = self.playlists.list_tracks(interaction.user.id, name)
         if tracks is None:
@@ -327,6 +360,7 @@ class MusicCog(commands.Cog):
         await self._send(interaction, "\n".join(lines))
 
     @plist.command(name="play", description="Queue all tracks from your playlist")
+    @app_commands.autocomplete(name=_playlist_name_autocomplete)
     async def plist_play(self, interaction: discord.Interaction, name: str) -> None:
         await interaction.response.defer(thinking=True)
         voice = await self._ensure_voice(interaction)
@@ -341,14 +375,19 @@ class MusicCog(commands.Cog):
             await self._followup(interaction, f"Playlist `{name}` đang trống.")
             return
 
+        queries = [(item.video_id or item.source) for item in tracks]
+        resolve_tasks = [
+            self.resolver.extract(q, interaction.user.id) for q in queries
+        ]
+        resolved = await asyncio.gather(*resolve_tasks)
+
         added = 0
-        for item in tracks:
-            query = item.video_id or item.source
-            track = await self.resolver.extract(query, interaction.user.id)
+        for track in resolved:
             if track is None:
                 continue
             await self.player.enqueue(interaction.guild, track)
             added += 1
+
         await self._followup(interaction, f"Đã thêm {added} bài từ `{name}` vào hàng chờ.")
 
 
