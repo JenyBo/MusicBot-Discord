@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import time
 from typing import Any, Optional
 
@@ -21,6 +22,7 @@ class _CacheEntry:
 
 class YouTubeResolver:
     def __init__(self) -> None:
+        cookiefile = os.getenv("YTDLP_COOKIEFILE", "").strip() or None
         self._ydl_opts = {
             "format": "bestaudio[ext=webm]/bestaudio/best",
             "noplaylist": True,
@@ -28,6 +30,8 @@ class YouTubeResolver:
             "quiet": True,
             "no_warnings": True,
         }
+        if cookiefile:
+            self._ydl_opts["cookiefile"] = cookiefile
         self._cache: dict[str, _CacheEntry] = {}
 
     def _extract_sync(self, query: str) -> dict[str, Any]:
@@ -56,7 +60,18 @@ class YouTubeResolver:
         if cached is not None:
             data = cached
         else:
-            data = await asyncio.to_thread(self._extract_sync, query)
+            try:
+                data = await asyncio.to_thread(self._extract_sync, query)
+            except yt_dlp.utils.ExtractorError as e:
+                msg = str(e)
+                if "Sign in to confirm you\u2019re not a bot" in msg or "confirm you\u2019re not a bot" in msg:
+                    raise RuntimeError(
+                        "YouTube đang chặn server này (yêu cầu xác minh 'không phải bot'). "
+                        "Bạn cần cung cấp cookies cho yt-dlp (env `YTDLP_COOKIEFILE`) hoặc đổi host/IP."
+                    ) from e
+                return None
+            except Exception:
+                return None
             if data is not None:
                 self._cache_put(query, data)
 

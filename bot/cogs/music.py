@@ -146,7 +146,11 @@ class MusicCog(commands.Cog):
         if voice is None or interaction.guild is None or interaction.user is None:
             return
 
-        track = await self.resolver.extract(query_or_url, interaction.user.id)
+        try:
+            track = await self.resolver.extract(query_or_url, interaction.user.id)
+        except RuntimeError as e:
+            await self._followup(interaction, str(e))
+            return
         if track is None:
             await self._followup(interaction, "Không thể tìm/resolve bài này.")
             return
