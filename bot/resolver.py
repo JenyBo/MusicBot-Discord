@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import os
+from pathlib import Path
 import time
 from typing import Any, Optional
 
@@ -23,6 +25,20 @@ class _CacheEntry:
 class YouTubeResolver:
     def __init__(self) -> None:
         cookiefile = os.getenv("YTDLP_COOKIEFILE", "").strip() or None
+        cookie_b64 = os.getenv("YTDLP_COOKIE_B64", "").strip() or None
+        if not cookiefile and cookie_b64:
+            try:
+                raw = base64.b64decode(cookie_b64.encode("utf-8"), validate=False)
+                cookie_path = Path("/tmp/yt_cookies.txt")
+                cookie_path.parent.mkdir(parents=True, exist_ok=True)
+                cookie_path.write_bytes(raw)
+                try:
+                    os.chmod(cookie_path, 0o600)
+                except Exception:
+                    pass
+                cookiefile = str(cookie_path)
+            except Exception:
+                cookiefile = None
         self._ydl_opts = {
             "format": "bestaudio[ext=webm]/bestaudio/best",
             "noplaylist": True,
@@ -67,7 +83,7 @@ class YouTubeResolver:
                 if "Sign in to confirm you\u2019re not a bot" in msg or "confirm you\u2019re not a bot" in msg:
                     raise RuntimeError(
                         "YouTube đang chặn server này (yêu cầu xác minh 'không phải bot'). "
-                        "Bạn cần cung cấp cookies cho yt-dlp (env `YTDLP_COOKIEFILE`) hoặc đổi host/IP."
+                        "Bạn cần cung cấp cookies cho yt-dlp (env `YTDLP_COOKIEFILE` hoặc `YTDLP_COOKIE_B64`) hoặc đổi host/IP."
                     ) from e
                 return None
             except Exception:

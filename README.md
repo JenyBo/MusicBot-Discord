@@ -71,3 +71,11 @@ python main.py
 - This project is intended for personal testing on a private server.
 - YouTube and Discord platform policies can change; make sure your usage remains compliant.
 - Update dev_guild_id if you want to dev this more
+
+## Hosting notes (yt-dlp YouTube verification)
+
+Some cloud hosts (Render/Railway/VPS IP ranges) may trigger YouTube "confirm you're not a bot".
+If that happens, export a YouTube cookies.txt and provide it to yt-dlp using **one** of:
+
+- `YTDLP_COOKIEFILE`: path to `cookies.txt` inside the container
+- `YTDLP_COOKIE_B64`: base64 contents of `cookies.txt` (the bot will write it to `/tmp/yt_cookies.txt`)
