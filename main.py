@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import logging
+import os
 
+from aiohttp import web
 import discord
 from discord.ext import commands
 from dotenv import load_dotenv
@@ -25,6 +27,22 @@ class MusicBot(commands.Bot):
 
     async def setup_hook(self) -> None:
         await setup_music_cog(self, self.resolver, self.player, self.playlists)
+
+        # If deployed as a Render "Web Service", bind a small health server to $PORT.
+        port_raw = os.getenv("PORT", "").strip()
+        if port_raw.isdigit():
+            port = int(port_raw)
+            app = web.Application()
+
+            async def health(_req: web.Request) -> web.Response:
+                return web.Response(text="ok")
+
+            app.router.add_get("/health", health)
+            runner = web.AppRunner(app)
+            await runner.setup()
+            site = web.TCPSite(runner, host="0.0.0.0", port=port)
+            await site.start()
+
         # Global sync can take a while to appear. For faster iteration, set DEV_GUILD_ID
         # to sync commands instantly to a specific server.
         if self.settings.dev_guild_id:
