@@ -11,6 +11,7 @@ from discord.ext import commands
 from ..database import PlaylistRepository
 from ..player import PlayerManager
 from ..resolver import YouTubeResolver
+from ..youtube_api import YouTubeDataApi
 
 
 async def _playlist_name_autocomplete(
@@ -46,6 +47,7 @@ class MusicCog(commands.Cog):
         self.resolver = resolver
         self.player = player
         self.playlists = playlists
+        self.youtube = YouTubeDataApi(getattr(bot, "youtube_api_key", None) or "")
 
     async def _ensure_voice(
         self, interaction: discord.Interaction
@@ -115,6 +117,8 @@ class MusicCog(commands.Cog):
             name="Phát nhạc",
             value=(
                 "- `/play <từ_khóa_hoặc_link>`: Phát/Thêm bài vào hàng chờ\n"
+                "- `/trendingvn`: Top 10 nhạc thịnh hành YouTube VN\n"
+                "- `/newmusicvn`: Top 10 nhạc mới (YouTube VN)\n"
                 "- `/skip`: Bỏ qua bài hiện tại\n"
                 "- `/stop`: Dừng phát và rời voice\n"
                 "- `/queue`: Xem danh sách đang phát/hàng chờ"
@@ -137,6 +141,52 @@ class MusicCog(commands.Cog):
             inline=False,
         )
         await interaction.response.send_message(embed=embed, ephemeral=False)
+
+    @app_commands.command(name="trendingvn", description="Top 10 nhạc thịnh hành YouTube Việt Nam")
+    async def trendingvn(self, interaction: discord.Interaction) -> None:
+        if not self.youtube.api_key:
+            await self._send(
+                interaction,
+                "Thiếu `YOUTUBE_API_KEY`. Hãy tạo API key YouTube Data API v3 và set biến môi trường này.",
+                delete_after=None,
+            )
+            return
+        await interaction.response.defer(thinking=True)
+        try:
+            items = await self.youtube.trending_music_vn(limit=10)
+        except Exception as e:
+            await self._followup(interaction, f"Lỗi YouTube API: {e}", delete_after=None)
+            return
+        if not items:
+            await self._followup(interaction, "Không lấy được danh sách trending.", delete_after=None)
+            return
+        lines = ["Top 10 nhạc thịnh hành (YouTube VN):"]
+        for i, v in enumerate(items, start=1):
+            lines.append(f"{i}. {v.title}\n{v.url}")
+        await self._followup(interaction, "\n".join(lines), delete_after=None)
+
+    @app_commands.command(name="newmusicvn", description="Top 10 nhạc mới YouTube Việt Nam (mới đăng)")
+    async def newmusicvn(self, interaction: discord.Interaction) -> None:
+        if not self.youtube.api_key:
+            await self._send(
+                interaction,
+                "Thiếu `YOUTUBE_API_KEY`. Hãy tạo API key YouTube Data API v3 và set biến môi trường này.",
+                delete_after=None,
+            )
+            return
+        await interaction.response.defer(thinking=True)
+        try:
+            items = await self.youtube.newest_music_vn(limit=10)
+        except Exception as e:
+            await self._followup(interaction, f"Lỗi YouTube API: {e}", delete_after=None)
+            return
+        if not items:
+            await self._followup(interaction, "Không lấy được danh sách nhạc mới.", delete_after=None)
+            return
+        lines = ["Top 10 nhạc mới (YouTube VN, mới đăng):"]
+        for i, v in enumerate(items, start=1):
+            lines.append(f"{i}. {v.title}\n{v.url}")
+        await self._followup(interaction, "\n".join(lines), delete_after=None)
 
     @app_commands.command(name="play", description="Play a YouTube track by URL or search")
     @app_commands.describe(query_or_url="YouTube URL or search text")

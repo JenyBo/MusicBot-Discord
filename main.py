@@ -21,6 +21,7 @@ class MusicBot(commands.Bot):
         self.settings = load_settings()
         self.playlists = PlaylistRepository(self.settings.db_path)
         self.player = PlayerManager(self, ffmpeg_executable=self.settings.ffmpeg_executable)
+        self.youtube_api_key = self.settings.youtube_api_key
 
     async def setup_hook(self) -> None:
         await setup_music_cog(self, self.resolver, self.player, self.playlists)
