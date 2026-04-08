@@ -58,6 +58,10 @@ python main.py
 - `/plist list`
 - `/plist delete <name>`
 
+### Music trending
+
+- `/trendingvn`
+
 ## Data storage
 
 - SQLite file path: `data/musicbot.db`
