@@ -78,6 +78,24 @@ class YouTubeResolver:
         else:
             try:
                 data = await asyncio.to_thread(self._extract_sync, query)
+            except yt_dlp.utils.DownloadError as e:
+                msg = str(e)
+                lowered = msg.lower()
+                if (
+                    "not a bot" in lowered
+                    or "sign in to confirm" in lowered
+                    or ("confirm you" in lowered and "bot" in lowered)
+                    or "cookies-from-browser" in lowered
+                    or "cookiefile" in lowered and "youtube" in lowered
+                ):
+                    raise RuntimeError(
+                        "YouTube đang chặn server này (yêu cầu xác minh 'không phải bot'). "
+                        "Bạn cần cung cấp cookies cho yt-dlp (env `YTDLP_COOKIEFILE` hoặc `YTDLP_COOKIE_B64`) hoặc đổi host/IP."
+                    ) from e
+                short = " ".join(msg.split())
+                if len(short) > 250:
+                    short = short[:247] + "..."
+                raise RuntimeError(f"yt-dlp download error: {short}") from e
             except yt_dlp.utils.ExtractorError as e:
                 msg = str(e)
                 lowered = msg.lower()
