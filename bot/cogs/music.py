@@ -430,10 +430,12 @@ class MusicCog(commands.Cog):
             return
 
         queries = [(item.video_id or item.source) for item in tracks]
-        resolve_tasks = [
-            self.resolver.extract(q, interaction.user.id) for q in queries
-        ]
-        resolved = await asyncio.gather(*resolve_tasks)
+        try:
+            resolve_tasks = [self.resolver.extract(q, interaction.user.id) for q in queries]
+            resolved = await asyncio.gather(*resolve_tasks)
+        except RuntimeError as e:
+            await self._followup(interaction, str(e))
+            return
 
         added = 0
         for track in resolved:
