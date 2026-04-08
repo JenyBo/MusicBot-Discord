@@ -40,7 +40,8 @@ class YouTubeResolver:
             except Exception:
                 cookiefile = None
         self._ydl_opts = {
-            "format": "bestaudio[ext=webm]/bestaudio/best",
+            # Be permissive here; some videos don't offer webm audio formats.
+            "format": "bestaudio/best",
             "noplaylist": True,
             "default_search": "ytsearch1",
             "quiet": True,
