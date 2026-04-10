@@ -109,6 +109,11 @@ Use a **Web Service** (not Background Worker): Render injects `PORT`; the bot st
 5. **SQLite (`data/musicbot.db`)**: On Render the filesystem is **ephemeral** unless you add a **persistent disk** and point `db_path` at it (would require a small code/env change). Playlists reset on each redeploy otherwise.
 6. **Free tier**: The service **spins down** when idle; the bot will disconnect until the next request wakes it (not ideal for 24/7 music). A paid instance or another host is better for always-on voice.
 
+7. **`Unknown interaction` / error 10062 on `/play`**: Discord only accepts a response within a few seconds. After a **cold start** or **wake from sleep**, or if the **event loop is delayed**, `defer()` can fail with **10062**. Mitigations:
+   - Use **UptimeRobot**, **cron-job.org**, or similar to request `https://<your-service>.onrender.com/health` (or `/`) **every 2–5 minutes** so the instance stays warm.
+   - Do **not** run the bot **locally and on Render at the same time** with the same token (two sessions confuse Discord and can cause odd interaction errors).
+   - In the [Discord Developer Portal](https://discord.com/developers/applications) → your app → **General Information**: leave **Interactions Endpoint URL** **empty** unless you intentionally use HTTP interactions (this project uses the **gateway** only).
+
 ## Hosting notes (yt-dlp YouTube verification)
 
 Some cloud hosts (Render/Railway/VPS IP ranges) may trigger YouTube "confirm you're not a bot".
