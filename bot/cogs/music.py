@@ -75,12 +75,16 @@ class MusicCog(commands.Cog):
         delete_after: Optional[float] = 5,
         ephemeral: bool = False,
     ) -> None:
-        await interaction.response.send_message(content, ephemeral=ephemeral)
+        # After `defer()`, only followups are valid — e.g. `/play` → `_ensure_voice` → `_send`.
+        if interaction.response.is_done():
+            msg = await interaction.followup.send(content, ephemeral=ephemeral, wait=True)
+        else:
+            await interaction.response.send_message(content, ephemeral=ephemeral)
+            try:
+                msg = await interaction.original_response()
+            except discord.HTTPException:
+                return
         if delete_after is None or ephemeral:
-            return
-        try:
-            msg = await interaction.original_response()
-        except Exception:
             return
         asyncio.create_task(self._delete_later(msg, delete_after))
 
@@ -221,8 +225,10 @@ class MusicCog(commands.Cog):
         if interaction.guild is None:
             await self._send(interaction, "Lệnh này chỉ dùng trong server.")
             return
+        # Acknowledge within 3s; voice disconnect can be slow on cloud hosts.
+        await interaction.response.defer(thinking=False)
         await self.player.stop(interaction.guild.id)
-        await self._send(interaction, "Đã dừng phát và rời voice.")
+        await self._followup(interaction, "Đã dừng phát và rời voice.")
 
     @app_commands.command(name="queue", description="Show current queue")
     async def queue(self, interaction: discord.Interaction) -> None:
