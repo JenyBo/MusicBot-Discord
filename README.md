@@ -35,8 +35,6 @@ Set `DISCORD_TOKEN` in `.env`.
 python main.py
 ```
 
-## Slash commands
-
 ### Help
 
 - `/help`
