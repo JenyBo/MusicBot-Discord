@@ -2,16 +2,66 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import logging
 import os
 from pathlib import Path
 import time
 from typing import Any, Optional
+
+_log = logging.getLogger(__name__)
 
 import yt_dlp
 
 from .models import Track
 
 _CACHE_TTL = 60 * 60  # 60 minutes
+
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
+
+
+def _resolve_cookie_path(path_str: str) -> str:
+    p = Path(path_str.strip())
+    if not p.is_absolute():
+        p = (_PROJECT_ROOT / p).resolve()
+    return str(p)
+
+
+def _usable_audio_url(fmt: dict[str, Any]) -> str | None:
+    url = fmt.get("url")
+    if not url or not isinstance(url, str):
+        return None
+    low = url.lower()
+    if "storyboard" in low or "/sb/" in low:
+        return None
+    ext = (fmt.get("ext") or "").lower()
+    if ext in ("jpg", "jpeg", "png", "webp", "gif"):
+        return None
+    acodec = (fmt.get("acodec") or "").lower()
+    if acodec in ("", "none"):
+        return None
+    return url
+
+
+def _pick_stream_url(data: dict[str, Any]) -> str | None:
+    for fmt in data.get("requested_formats") or []:
+        u = _usable_audio_url(fmt)
+        if u:
+            return u
+    u = _usable_audio_url(data)
+    if u:
+        return u
+    formats = data.get("formats") or []
+
+    def sort_key(f: dict[str, Any]) -> tuple[int, float]:
+        # Prefer higher audio bitrate; missing abr sorts last.
+        abr = f.get("abr")
+        return (1 if abr is not None else 0, float(abr or 0.0))
+
+    for fmt in sorted(formats, key=sort_key, reverse=True):
+        u = _usable_audio_url(fmt)
+        if u:
+            return u
+    return None
 
 
 class _CacheEntry:
@@ -24,7 +74,18 @@ class _CacheEntry:
 
 class YouTubeResolver:
     def __init__(self) -> None:
-        cookiefile = os.getenv("YTDLP_COOKIEFILE", "").strip() or None
+        raw_cookie = os.getenv("YTDLP_COOKIEFILE", "").strip() or None
+        cookiefile = None
+        if raw_cookie:
+            resolved = _resolve_cookie_path(raw_cookie)
+            if Path(resolved).is_file():
+                cookiefile = resolved
+            else:
+                _log.warning(
+                    "YTDLP_COOKIEFILE set but file not found: %s (resolved: %s)",
+                    raw_cookie,
+                    resolved,
+                )
         cookie_b64 = os.getenv("YTDLP_COOKIE_B64", "").strip() or None
         if not cookiefile and cookie_b64:
             try:
@@ -39,6 +100,12 @@ class YouTubeResolver:
                 cookiefile = str(cookie_path)
             except Exception:
                 cookiefile = None
+        # YouTube needs EJS (yt-dlp-ejs) + a JS runtime. Default API params only enable deno;
+        # many Windows hosts have Node but not Deno — include both.
+        js_runtimes: dict[str, dict] = {"deno": {}, "node": {}}
+        extra = os.getenv("YTDLP_JS_RUNTIMES", "").strip().lower()
+        if extra:
+            js_runtimes = {name.strip(): {} for name in extra.split(",") if name.strip()}
         self._ydl_opts = {
             "format": "bestaudio/best",
             "format_sort": ["acodec:opus", "acodec:aac"],
@@ -46,8 +113,7 @@ class YouTubeResolver:
             "default_search": "ytsearch1",
             "quiet": True,
             "no_warnings": True,
-            # If "bestaudio/best" fails, fall back to literally any format.
-            "ignore_no_formats_error": True,
+            "js_runtimes": js_runtimes,
         }
         if cookiefile:
             self._ydl_opts["cookiefile"] = cookiefile
@@ -130,8 +196,10 @@ class YouTubeResolver:
             if not entries:
                 return None
             data = entries[0]
-        stream_url = data.get("url")
+        stream_url = _pick_stream_url(data)
         webpage_url = data.get("webpage_url")
+        if not webpage_url and data.get("id"):
+            webpage_url = f"https://www.youtube.com/watch?v={data['id']}"
         title = data.get("title")
         if not stream_url or not webpage_url or not title:
             return None

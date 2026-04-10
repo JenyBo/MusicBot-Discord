@@ -5,7 +5,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 # System deps for discord voice + yt-dlp playback
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ffmpeg libopus0 \
+    && apt-get install -y --no-install-recommends ffmpeg libopus0 nodejs \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

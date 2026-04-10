@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
-import subprocess
 from collections import defaultdict, deque
 
 import discord
@@ -59,12 +58,13 @@ class PlayerManager:
             log.info("Playing %s", track.title)
 
             try:
+                # Do not pass stderr=PIPE: discord.py treats it as None; stderr inherits.
+                # Avoid reading stderr in `after` (runs on audio thread; pipe may be None).
                 source = discord.FFmpegPCMAudio(
                     track.stream_url,
                     before_options=before_options,
                     options=FFMPEG_OPTIONS,
                     executable=self.ffmpeg_executable,
-                    stderr=subprocess.PIPE,
                 )
                 transformed = discord.PCMVolumeTransformer(source, volume=0.8)
             except Exception:
@@ -72,16 +72,9 @@ class PlayerManager:
                 self.bot.loop.call_soon_threadsafe(player.next_track.set)
                 continue
 
-            def _after_playback(err: Exception | None, _src=source) -> None:
+            def _after_playback(err: Exception | None) -> None:
                 if err:
                     log.error("[voice] playback error: %s", err)
-                try:
-                    if _src._process and _src._process.stderr:
-                        stderr_out = _src._process.stderr.read()
-                        if stderr_out:
-                            log.warning("[ffmpeg stderr] %s", stderr_out.decode(errors='replace')[:2000])
-                except Exception as e:
-                    log.debug("Could not read ffmpeg stderr: %s", e)
                 self.bot.loop.call_soon_threadsafe(player.next_track.set)
 
             try:

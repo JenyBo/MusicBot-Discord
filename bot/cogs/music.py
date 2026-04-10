@@ -62,9 +62,9 @@ class MusicCog(commands.Cog):
 
         channel = member.voice.channel
         if interaction.guild.voice_client is None:
-            return await channel.connect()
+            return await channel.connect(timeout=120.0, reconnect=True)
         if interaction.guild.voice_client.channel != channel:
-            await interaction.guild.voice_client.move_to(channel)
+            await interaction.guild.voice_client.move_to(channel, timeout=120.0)
         return interaction.guild.voice_client
 
     async def _send(

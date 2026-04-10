@@ -38,6 +38,7 @@ class MusicBot(commands.Bot):
                 return web.Response(text="ok")
 
             app.router.add_get("/health", health)
+            app.router.add_get("/", health)
             runner = web.AppRunner(app)
             await runner.setup()
             site = web.TCPSite(runner, host="0.0.0.0", port=port)
