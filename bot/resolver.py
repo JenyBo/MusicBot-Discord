@@ -11,7 +11,7 @@ import yt_dlp
 
 from .models import Track
 
-_CACHE_TTL = 30 * 60  # 30 minutes
+_CACHE_TTL = 60 * 60  # 60 minutes
 
 
 class _CacheEntry:
