@@ -112,9 +112,14 @@ class YouTubeResolver:
             "noplaylist": True,
             "default_search": "ytsearch1",
             "quiet": True,
-            "no_warnings": True,
+            "no_warnings": False,
             "js_runtimes": js_runtimes,
         }
+        _log.info(
+            "YouTubeResolver init: cookiefile=%s, js_runtimes=%s",
+            cookiefile or "(none)",
+            list(js_runtimes.keys()),
+        )
         if cookiefile:
             self._ydl_opts["cookiefile"] = cookiefile
         self._cache: dict[str, _CacheEntry] = {}
@@ -143,12 +148,16 @@ class YouTubeResolver:
     async def extract(self, query: str, requester_id: int) -> Optional[Track]:
         cached = self._cache_get(query)
         if cached is not None:
+            _log.info("[resolve] cache hit for %r", query)
             data = cached
         else:
+            t0 = time.monotonic()
             try:
                 data = await asyncio.to_thread(self._extract_sync, query)
             except yt_dlp.utils.DownloadError as e:
+                elapsed = time.monotonic() - t0
                 msg = str(e)
+                _log.warning("[resolve] DownloadError after %.1fs for %r: %s", elapsed, query, msg[:300])
                 lowered = msg.lower()
                 if (
                     "not a bot" in lowered
@@ -166,7 +175,9 @@ class YouTubeResolver:
                     short = short[:247] + "..."
                 raise RuntimeError(f"yt-dlp download error: {short}") from e
             except yt_dlp.utils.ExtractorError as e:
+                elapsed = time.monotonic() - t0
                 msg = str(e)
+                _log.warning("[resolve] ExtractorError after %.1fs for %r: %s", elapsed, query, msg[:300])
                 lowered = msg.lower()
                 if (
                     "not a bot" in lowered
@@ -179,30 +190,62 @@ class YouTubeResolver:
                         "YouTube đang chặn server này (yêu cầu xác minh 'không phải bot'). "
                         "Bạn cần cung cấp cookies cho yt-dlp (env `YTDLP_COOKIEFILE` hoặc `YTDLP_COOKIE_B64`) hoặc đổi host/IP."
                     ) from e
-                # Surface other extractor errors to the user (shortened).
                 short = " ".join(msg.split())
                 if len(short) > 250:
                     short = short[:247] + "..."
                 raise RuntimeError(f"yt-dlp error: {short}") from e
-            except Exception:
+            except Exception as e:
+                elapsed = time.monotonic() - t0
+                _log.error(
+                    "[resolve] Unexpected %s after %.1fs for %r: %s",
+                    type(e).__name__, elapsed, query, e,
+                    exc_info=True,
+                )
                 return None
+
+            elapsed = time.monotonic() - t0
+            _log.info("[resolve] yt-dlp returned in %.1fs for %r", elapsed, query)
             if data is not None:
                 self._cache_put(query, data)
 
         if data is None:
+            _log.warning("[resolve] yt-dlp returned None for %r", query)
             return None
         if "entries" in data:
             entries = data.get("entries", [])
             if not entries:
+                _log.warning("[resolve] search returned 0 entries for %r", query)
                 return None
             data = entries[0]
+
+        n_formats = len(data.get("formats") or [])
+        has_req_fmts = bool(data.get("requested_formats"))
+        top_url = bool(data.get("url"))
         stream_url = _pick_stream_url(data)
         webpage_url = data.get("webpage_url")
         if not webpage_url and data.get("id"):
             webpage_url = f"https://www.youtube.com/watch?v={data['id']}"
         title = data.get("title")
+
         if not stream_url or not webpage_url or not title:
+            _log.warning(
+                "[resolve] Missing fields for %r — "
+                "stream_url=%s, webpage_url=%s, title=%s, "
+                "n_formats=%d, has_requested_formats=%s, has_top_url=%s",
+                query,
+                bool(stream_url), bool(webpage_url), bool(title),
+                n_formats, has_req_fmts, top_url,
+            )
+            if not stream_url and n_formats > 0:
+                sample = data["formats"][-1]
+                _log.warning(
+                    "[resolve] last format sample: ext=%s acodec=%s vcodec=%s url=%s",
+                    sample.get("ext"), sample.get("acodec"), sample.get("vcodec"),
+                    (sample.get("url") or "")[:80],
+                )
             return None
+
+        _log.info("[resolve] OK %r → %s (n_formats=%d)", query, title, n_formats)
         return Track(
             title=title,
             webpage_url=webpage_url,
