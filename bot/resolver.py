@@ -100,6 +100,24 @@ class YouTubeResolver:
                 cookiefile = str(cookie_path)
             except Exception:
                 cookiefile = None
+
+        # Render secret files are mounted read-only (e.g. /etc/secrets/cookies.txt).
+        # yt-dlp may try to save cookies back to the cookiefile on exit, which will fail
+        # on read-only mounts. If the cookiefile path is not writable, copy it to /tmp.
+        if cookiefile:
+            try:
+                if not os.access(cookiefile, os.W_OK):
+                    tmp_cookie = Path("/tmp/yt_cookies.txt")
+                    tmp_cookie.parent.mkdir(parents=True, exist_ok=True)
+                    tmp_cookie.write_bytes(Path(cookiefile).read_bytes())
+                    try:
+                        os.chmod(tmp_cookie, 0o600)
+                    except Exception:
+                        pass
+                    _log.info("Cookiefile is read-only; copied to %s", str(tmp_cookie))
+                    cookiefile = str(tmp_cookie)
+            except Exception as e:
+                _log.warning("Could not prepare writable cookiefile copy: %s", e)
         # YouTube needs EJS (yt-dlp-ejs) + a JS runtime. Default API params only enable deno;
         # many Windows hosts have Node but not Deno — include both.
         js_runtimes: dict[str, dict] = {"deno": {}, "node": {}}
