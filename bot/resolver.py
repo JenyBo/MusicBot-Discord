@@ -124,6 +124,21 @@ class YouTubeResolver:
         extra = os.getenv("YTDLP_JS_RUNTIMES", "").strip().lower()
         if extra:
             js_runtimes = {name.strip(): {} for name in extra.split(",") if name.strip()}
+
+        # Optional: force specific YouTube "player clients" (can affect bot-check behaviour).
+        # Example: YTDLP_PLAYER_CLIENTS=web,web_safari
+        player_clients_raw = os.getenv("YTDLP_PLAYER_CLIENTS", "").strip()
+        extractor_args: dict[str, dict[str, list[str]]] | None = None
+        if player_clients_raw:
+            clients = [c.strip() for c in player_clients_raw.split(",") if c.strip()]
+            if clients:
+                extractor_args = {"youtube": {"player_client": clients}}
+
+        # Optional: use a proxy (often the only reliable fix for datacenter IP rate limits / bot-check).
+        # Examples:
+        # - http://user:pass@host:port
+        # - socks5://user:pass@host:port
+        proxy = os.getenv("YTDLP_PROXY", "").strip() or None
         self._ydl_opts = {
             "format": "bestaudio/best",
             "format_sort": ["acodec:opus", "acodec:aac"],
@@ -133,10 +148,16 @@ class YouTubeResolver:
             "no_warnings": False,
             "js_runtimes": js_runtimes,
         }
+        if extractor_args:
+            self._ydl_opts["extractor_args"] = extractor_args
+        if proxy:
+            self._ydl_opts["proxy"] = proxy
         _log.info(
-            "YouTubeResolver init: cookiefile=%s, js_runtimes=%s",
+            "YouTubeResolver init: cookiefile=%s, js_runtimes=%s, player_clients=%s, proxy=%s",
             cookiefile or "(none)",
             list(js_runtimes.keys()),
+            player_clients_raw or "(default)",
+            "(set)" if proxy else "(none)",
         )
         if cookiefile:
             self._ydl_opts["cookiefile"] = cookiefile

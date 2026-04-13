@@ -119,3 +119,8 @@ If that happens, export a YouTube cookies.txt and provide it to yt-dlp using **o
 
 - `YTDLP_COOKIEFILE`: path to `cookies.txt` inside the container (e.g. if you mount a secret file)
 - `YTDLP_COOKIE_B64`: base64 contents of `cookies.txt` (the bot will write it to `/tmp/yt_cookies.txt`) — **preferred on Render**
+
+If cookies are loaded but you still see bot-checks, it is usually **the host IP** being flagged. Options:
+
+- Set `YTDLP_PROXY` to use a proxy with a cleaner IP (most reliable).
+- Try `YTDLP_PLAYER_CLIENTS=web,web_safari` (sometimes helps, not guaranteed).
